@@ -156,7 +156,7 @@ ${reviewResult.recommendations.map(rec => `- 🔧 ${rec}`).join('\n')}
       } else {
         throw new Error(`钉钉API错误: ${response.data.errmsg}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       return {
         success: false,
         message: `发送钉钉消息失败: ${error.message}`,
@@ -221,7 +221,7 @@ export const dingtalkSimpleTool = createTool({
       } else {
         throw new Error(`钉钉API错误: ${response.data.errmsg}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       return {
         success: false,
         message: `发送钉钉消息失败: ${error.message}`,

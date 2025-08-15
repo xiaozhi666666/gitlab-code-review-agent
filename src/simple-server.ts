@@ -30,6 +30,7 @@ app.post('/webhook/gitlab', async (req, res) => {
         body: req.body,
         secretToken: process.env.GITLAB_WEBHOOK_SECRET,
       },
+      runtimeContext: {} as any
     });
 
     if (!webhookResult.isValidPush) {
@@ -70,6 +71,7 @@ app.post('/webhook/gitlab', async (req, res) => {
             projectId: parseInt(process.env.GITLAB_PROJECT_ID!),
             commitSha: commit.id,
           },
+          runtimeContext: {} as any
         });
 
         console.log(`📄 获取到 ${diffResult.files.length} 个文件的差异`);
@@ -90,6 +92,7 @@ app.post('/webhook/gitlab', async (req, res) => {
             projectName: webhookResult.projectName,
             commitUrl: commit.url,
           },
+          runtimeContext: {} as any
         });
         
         console.log(`📊 审查完成，评分: ${reviewResult.overallScore}/10`);
@@ -117,6 +120,7 @@ app.post('/webhook/gitlab', async (req, res) => {
             },
             reviewResult,
           },
+          runtimeContext: {} as any
         });
 
         if (notifyResult.success) {
@@ -197,6 +201,7 @@ app.post('/test/dingtalk', async (req, res) => {
         },
         reviewResult: testReviewResult,
       },
+      runtimeContext: {} as any
     });
 
     res.json(result);

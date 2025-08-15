@@ -38,10 +38,17 @@ app.post('/webhook/gitlab', async (req, res) => {
       });
     }
 
-    const result = await workflow.execute({
-      headers: req.headers as any,
-      body: req.body,
-      ...config,
+    const result = await (workflow.execute as any)({
+      inputData: {
+        headers: req.headers as any,
+        body: req.body,
+        secretToken: config.secretToken,
+        gitlabUrl: config.gitlabUrl,
+        accessToken: config.accessToken!,
+        projectId: config.projectId,
+        dingtalkWebhook: config.dingtalkWebhook!,
+        dingtalkSecret: config.dingtalkSecret,
+      }
     });
 
     res.json({
@@ -98,6 +105,7 @@ app.post('/test/dingtalk', async (req, res) => {
         message: message || '测试消息',
         title: title || '测试',
       },
+      runtimeContext: {} as any
     });
 
     res.json(result);

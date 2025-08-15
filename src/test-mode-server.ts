@@ -30,6 +30,7 @@ app.post('/webhook/gitlab', async (req, res) => {
         body: req.body,
         secretToken: process.env.GITLAB_WEBHOOK_SECRET,
       },
+      runtimeContext: {} as any
     });
 
     if (!webhookResult.isValidPush) {
@@ -83,6 +84,7 @@ function example() {
             projectName: webhookResult.projectName,
             commitUrl: commit.url,
           },
+          runtimeContext: {} as any
         });
         
         console.log(`📊 审查完成，评分: ${reviewResult.overallScore}/10`);
@@ -110,6 +112,7 @@ function example() {
             },
             reviewResult,
           },
+          runtimeContext: {} as any
         });
 
         if (notifyResult.success) {
@@ -205,6 +208,7 @@ app.post('/test/dingtalk', async (req, res) => {
         },
         reviewResult: testReviewResult,
       },
+      runtimeContext: {} as any
     });
 
     res.json(result);

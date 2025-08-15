@@ -35,6 +35,13 @@ const webhookStep = createStep({
     }),
     body: z.any(), // GitLab webhook的完整payload
     secretToken: z.string().optional(), // 用于验证的密钥
+    // GitLab API配置 - 从工作流输入传递
+    gitlabUrl: z.string(),        // GitLab实例URL
+    accessToken: z.string(),      // 访问token
+    projectId: z.number(),        // 项目ID
+    // 钉钉配置 - 传递给后续步骤
+    dingtalkWebhook: z.string(),  
+    dingtalkSecret: z.string().optional(),
   }),
   
   // 输出数据结构：处理后的提交信息
@@ -52,9 +59,15 @@ const webhookStep = createStep({
       filesChanged: z.array(z.string()), // 变更的文件列表
     })),
     branch: z.string(),           // 分支名
+    // 传递给下一步的配置
+    gitlabUrl: z.string(),
+    accessToken: z.string(),
+    projectId: z.number(),
+    dingtalkWebhook: z.string(),
+    dingtalkSecret: z.string().optional(),
   }),
   
-  execute: async ({ inputData, mastra }) => {
+  execute: async ({ inputData, runtimeContext }) => {
     if (!inputData) {
       throw new Error('输入数据不存在');
     }
@@ -62,8 +75,24 @@ const webhookStep = createStep({
     // 直接导入并使用GitLab webhook处理工具
     // 这个工具会验证token、解析webhook数据、提取提交信息
     const { gitlabWebhookTool } = await import('../tools/gitlab-webhook-tool');
-    const result = await gitlabWebhookTool.execute({ context: inputData });
-    return result;
+    const webhookResult = await gitlabWebhookTool.execute({ 
+      context: {
+        headers: inputData.headers,
+        body: inputData.body,
+        secretToken: inputData.secretToken
+      },
+      runtimeContext: {} as any
+    });
+    
+    // 将配置参数传递给下一步
+    return {
+      ...webhookResult,
+      gitlabUrl: inputData.gitlabUrl,
+      accessToken: inputData.accessToken,
+      projectId: inputData.projectId,
+      dingtalkWebhook: inputData.dingtalkWebhook,
+      dingtalkSecret: inputData.dingtalkSecret,
+    };
   },
 });
 
@@ -95,10 +124,12 @@ const fetchDiffStep = createStep({
       filesChanged: z.array(z.string()),
     })),
     branch: z.string(),
-    // GitLab API访问配置
+    // GitLab API访问配置 - 这些将从工作流输入传递
     gitlabUrl: z.string(),        // GitLab实例URL
     accessToken: z.string(),      // 访问token
     projectId: z.number(),        // 项目ID
+    dingtalkWebhook: z.string(),  // 传递给后续步骤
+    dingtalkSecret: z.string().optional(), // 传递给后续步骤
   }),
   
   // 输出：原有信息 + 每个提交的详细差异数据
@@ -116,9 +147,12 @@ const fetchDiffStep = createStep({
         diff: z.string(),         // 该文件的diff
       })),
     })),
+    // 传递给下一步的配置
+    dingtalkWebhook: z.string(),
+    dingtalkSecret: z.string().optional(),
   }),
   
-  execute: async ({ inputData, mastra }) => {
+  execute: async ({ inputData, runtimeContext }) => {
     // 如果不是有效推送，直接返回空结果
     if (!inputData || !inputData.isValidPush) {
       return {
@@ -127,6 +161,8 @@ const fetchDiffStep = createStep({
         commits: [],
         branch: '',
         diffData: [],
+        dingtalkWebhook: inputData?.dingtalkWebhook || '',
+        dingtalkSecret: inputData?.dingtalkSecret,
       };
     }
 
@@ -146,6 +182,7 @@ const fetchDiffStep = createStep({
             projectId: inputData.projectId,
             commitSha: commit.id,
           },
+              runtimeContext: {} as any
         });
         
         // 收集差异数据
@@ -167,6 +204,9 @@ const fetchDiffStep = createStep({
       commits: inputData.commits,
       branch: inputData.branch,
       diffData, // 返回收集到的所有差异数据
+      // 传递钉钉配置给下一步
+      dingtalkWebhook: inputData.dingtalkWebhook,
+      dingtalkSecret: inputData.dingtalkSecret,
     };
   },
 });
@@ -199,6 +239,8 @@ const reviewCodeStep = createStep({
         diff: z.string(),
       })),
     })),
+    dingtalkWebhook: z.string(),
+    dingtalkSecret: z.string().optional(),
   }),
   
   // 输出：添加每个提交的审查结果
@@ -215,9 +257,11 @@ const reviewCodeStep = createStep({
       positives: z.array(z.string()), // 积极方面
       recommendations: z.array(z.string()), // 改进建议
     })),
+    dingtalkWebhook: z.string(),
+    dingtalkSecret: z.string().optional(),
   }),
   
-  execute: async ({ inputData, mastra }) => {
+  execute: async ({ inputData, runtimeContext }) => {
     // 验证输入数据的有效性
     if (!inputData || !inputData.isValidPush || inputData.diffData.length === 0) {
       return {
@@ -226,6 +270,8 @@ const reviewCodeStep = createStep({
         commits: [],
         branch: '',
         reviews: [],
+        dingtalkWebhook: inputData?.dingtalkWebhook || '',
+        dingtalkSecret: inputData?.dingtalkSecret,
       };
     }
 
@@ -237,7 +283,7 @@ const reviewCodeStep = createStep({
     // 为每个有差异数据的提交进行代码审查
     for (const diffItem of inputData.diffData) {
       // 找到对应的提交信息
-      const commit = inputData.commits.find(c => c.id === diffItem.commitId);
+      const commit = inputData.commits.find((c: any) => c.id === diffItem.commitId);
       if (!commit) continue;
 
       try {
@@ -250,6 +296,7 @@ const reviewCodeStep = createStep({
             projectName: inputData.projectName, // 项目名
             commitUrl: commit.url,           // 提交URL
           },
+              runtimeContext: {} as any
         });
 
         // 收集审查结果
@@ -257,7 +304,7 @@ const reviewCodeStep = createStep({
           commitId: commit.id,
           ...reviewResult, // 包含：overallScore, summary, issues, positives, recommendations
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error(`审查提交 ${commit.id} 失败:`, error);
         
         // 错误容错：为失败的审查创建一个默认结果
@@ -279,6 +326,8 @@ const reviewCodeStep = createStep({
       commits: inputData.commits,
       branch: inputData.branch,
       reviews, // 返回所有审查结果
+      dingtalkWebhook: inputData.dingtalkWebhook,
+      dingtalkSecret: inputData.dingtalkSecret,
     };
   },
 });
@@ -302,7 +351,14 @@ const notifyStep = createStep({
     projectName: z.string(),
     commits: z.array(z.any()),
     branch: z.string(),
-    reviews: z.array(z.any()),        // AI审查结果
+    reviews: z.array(z.object({
+      commitId: z.string(),
+      overallScore: z.number(),
+      summary: z.string(),
+      issues: z.array(z.any()),
+      positives: z.array(z.string()),
+      recommendations: z.array(z.string()),
+    })),        // AI审查结果
     // 钉钉配置
     dingtalkWebhook: z.string(),      // 钉钉机器人webhook URL
     dingtalkSecret: z.string().optional(), // 加签密钥（可选）
@@ -315,7 +371,7 @@ const notifyStep = createStep({
     reviewCount: z.number(),          // 成功发送的通知数量
   }),
   
-  execute: async ({ inputData, mastra }) => {
+  execute: async ({ inputData, runtimeContext }) => {
     // 验证是否有有效的审查结果需要通知
     if (!inputData || !inputData.isValidPush || inputData.reviews.length === 0) {
       return {
@@ -329,12 +385,12 @@ const notifyStep = createStep({
     const { dingtalkTool } = await import('../tools/dingtalk-tool');
 
     let successCount = 0;  // 成功发送的计数
-    const errors = [];     // 错误信息收集
+    const errors: string[] = [];     // 错误信息收集
 
     // 为每个审查结果发送钉钉通知
     for (const review of inputData.reviews) {
       // 找到对应的提交信息
-      const commit = inputData.commits.find(c => c.id === review.commitId);
+      const commit = inputData.commits.find((c: any) => c.id === review.commitId);
       if (!commit) continue;
 
       try {
@@ -362,6 +418,7 @@ const notifyStep = createStep({
               recommendations: review.recommendations, // 建议
             },
           },
+              runtimeContext: {} as any
         });
 
         // 统计发送结果
@@ -370,7 +427,7 @@ const notifyStep = createStep({
         } else {
           errors.push(`提交 ${commit.shortId}: ${result.message}`);
         }
-      } catch (error) {
+      } catch (error: any) {
         // 收集发送失败的错误信息
         errors.push(`提交 ${commit.shortId}: ${error.message}`);
       }
