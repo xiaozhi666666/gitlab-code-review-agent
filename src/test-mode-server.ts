@@ -55,23 +55,79 @@ app.post('/webhook/gitlab', async (req, res) => {
         console.log(`📁 文件变更: ${commit.filesChanged.length} 个文件`);
 
         // 模拟文件差异数据 (跳过真实的GitLab API调用)
-        const mockFiles = commit.filesChanged.map(filePath => ({
-          filePath,
-          content: `// 这是 ${filePath} 的模拟内容
+        const mockFiles = commit.filesChanged.map(filePath => {
+          // 根据文件类型生成不同的模拟内容
+          if (filePath.endsWith('.html')) {
+            return {
+              filePath,
+              content: `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>${filePath} 页面</title>
+</head>
+<body>
+    <h1>欢迎来到${filePath}</h1>
+    <p>这是新增的内容</p>
+</body>
+</html>`,
+              diff: `--- a/${filePath}
++++ b/${filePath}
+@@ -5,6 +5,7 @@
+ </head>
+ <body>
+     <h1>欢迎来到${filePath}</h1>
++    <p>这是新增的内容</p>
+ </body>
+ </html>`
+            };
+          } else if (filePath.endsWith('.css')) {
+            return {
+              filePath,
+              content: `.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.new-style {
+  color: #333;
+  font-size: 16px;
+}`,
+              diff: `--- a/${filePath}
++++ b/${filePath}
+@@ -3,3 +3,8 @@
+   margin: 0 auto;
+   padding: 20px;
+ }
++
++.new-style {
++  color: #333;
++  font-size: 16px;
++}`
+            };
+          } else {
+            // JavaScript或其他文件类型
+            return {
+              filePath,
+              content: `// 这是 ${filePath} 的模拟内容
 function example() {
-  console.log("Hello World");
+  // 使用适当的日志记录
+  logger.info("Hello World");
   return true;
 }`,
-          diff: `--- a/${filePath}
+              diff: `--- a/${filePath}
 +++ b/${filePath}
 @@ -1,3 +1,5 @@
 +// 新增的注释
  function example() {
--  console.log("Hello");
-+  console.log("Hello World");
+-  logger.info("Hello");
++  logger.info("Hello World");
    return true;
  }`
-        }));
+            };
+          }
+        });
 
         console.log(`📄 使用模拟的 ${mockFiles.length} 个文件差异`);
 
