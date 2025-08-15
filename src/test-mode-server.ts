@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { gitlabWebhookTool } from './mastra/tools/gitlab-webhook-tool';
 import { codeReviewTool } from './mastra/tools/code-review-tool';
-import { dingtalkTool } from './mastra/tools/dingtalk-tool';
+import { dingtalkTool, dingtalkBatchTool } from './mastra/tools/dingtalk-tool';
 
 const app = express();
 app.use(express.json());
@@ -42,10 +42,11 @@ app.post('/webhook/gitlab', async (req, res) => {
       });
     }
 
-    console.log(`📊 处理 ${webhookResult.commits.length} 个提交 (测试模式)`);
-    let totalReviews = 0;
-
-    // 2. 处理每个提交 (使用模拟数据)
+    console.log(`📊 批量处理 ${webhookResult.commits.length} 个提交 (测试模式)`);
+    
+    // 2. 批量处理所有提交的代码审查
+    const commitsReviews = [];
+    
     for (const commit of webhookResult.commits) {
       try {
         console.log(`🔍 分析提交: ${commit.shortId}`);
@@ -74,7 +75,7 @@ function example() {
 
         console.log(`📄 使用模拟的 ${mockFiles.length} 个文件差异`);
 
-        // 2.2 AI 代码审查
+        // 2.1 AI 代码审查
         console.log(`🤖 开始 AI 代码审查...`);
         const reviewResult = await codeReviewTool.execute({
           context: {
@@ -91,48 +92,80 @@ function example() {
         console.log(`🔍 发现问题: ${reviewResult.issues.length} 个`);
         console.log(`👍 积极方面: ${reviewResult.positives.length} 个`);
 
-        // 2.3 发送钉钉通知
-        console.log(`📤 发送钉钉通知...`);
-        if (!process.env.DINGTALK_WEBHOOK_URL) {
-          throw new Error('DINGTALK_WEBHOOK_URL 未配置');
-        }
-
-        const notifyResult = await dingtalkTool.execute({
-          context: {
-            webhookUrl: process.env.DINGTALK_WEBHOOK_URL!,
-            secret: process.env.DINGTALK_SECRET,
-            projectName: webhookResult.projectName,
-            commitInfo: {
-              id: commit.id,
-              shortId: commit.shortId,
-              message: commit.message,
-              author: commit.author,
-              url: commit.url,
-              branch: req.body.ref?.replace('refs/heads/', '') || 'unknown',
-            },
-            reviewResult,
+        // 收集审查结果
+        commitsReviews.push({
+          commitInfo: {
+            id: commit.id,
+            shortId: commit.shortId,
+            message: commit.message,
+            author: commit.author,
+            url: commit.url,
           },
-          runtimeContext: {} as any
+          reviewResult,
         });
 
-        if (notifyResult.success) {
-          totalReviews++;
-          console.log(`✅ 提交 ${commit.shortId} 处理完成`);
-          console.log(`📱 钉钉通知发送成功`);
-        } else {
-          console.log(`❌ 提交 ${commit.shortId} 钉钉通知失败: ${notifyResult.message}`);
-        }
+        console.log(`✅ 提交 ${commit.shortId} 分析完成`);
 
       } catch (error: any) {
         console.error(`❌ 处理提交 ${commit.shortId} 失败:`, error.message);
       }
     }
 
-    res.json({
-      success: true,
-      message: `测试模式: 成功处理 ${totalReviews}/${webhookResult.commits.length} 个提交`,
-      reviewCount: totalReviews,
-    });
+    // 3. 发送批量钉钉通知
+    if (commitsReviews.length > 0) {
+      console.log(`📤 发送批量钉钉通知 (${commitsReviews.length} 个提交)...`);
+      
+      if (!process.env.DINGTALK_WEBHOOK_URL) {
+        throw new Error('DINGTALK_WEBHOOK_URL 未配置');
+      }
+
+      // 获取主要提交者（提交数量最多的作者）
+      const authorCounts = commitsReviews.reduce((acc, review) => {
+        acc[review.commitInfo.author] = (acc[review.commitInfo.author] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const mainAuthor = Object.entries(authorCounts).reduce((a, b) => 
+        authorCounts[a[0]] > authorCounts[b[0]] ? a : b
+      )[0];
+
+      const batchNotifyResult = await dingtalkBatchTool.execute({
+        context: {
+          webhookUrl: process.env.DINGTALK_WEBHOOK_URL!,
+          secret: process.env.DINGTALK_SECRET,
+          projectName: webhookResult.projectName,
+          pushInfo: {
+            branch: req.body.ref?.replace('refs/heads/', '') || 'unknown',
+            totalCommits: commitsReviews.length,
+            author: mainAuthor,
+          },
+          commitsReviews,
+        },
+        runtimeContext: {} as any
+      });
+
+      if (batchNotifyResult.success) {
+        console.log(`✅ 批量钉钉通知发送成功`);
+        res.json({
+          success: true,
+          message: `测试模式: 成功处理并发送批量通知 (${commitsReviews.length} 个提交)`,
+          reviewCount: commitsReviews.length,
+        });
+      } else {
+        console.log(`❌ 批量钉钉通知失败: ${batchNotifyResult.message}`);
+        res.json({
+          success: false,
+          message: `批量通知失败: ${batchNotifyResult.message}`,
+          reviewCount: commitsReviews.length,
+        });
+      }
+    } else {
+      res.json({
+        success: false,
+        message: '没有成功处理的提交',
+        reviewCount: 0,
+      });
+    }
 
   } catch (error: any) {
     console.error('❌ Webhook 处理失败:', error.message);
@@ -150,6 +183,83 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     service: 'GitLab Code Review (Test Mode)' 
   });
+});
+
+// 测试批量钉钉消息端点
+app.post('/test/dingtalk-batch', async (req, res) => {
+  try {
+    if (!process.env.DINGTALK_WEBHOOK_URL) {
+      return res.status(400).json({ error: 'DingTalk webhook URL 未配置' });
+    }
+
+    // 创建测试用的批量审查结果
+    const testCommitsReviews = [
+      {
+        commitInfo: {
+          id: 'test-commit-1-12345678',
+          shortId: 'test1234',
+          message: '🚀 添加新功能：用户认证系统',
+          author: '小小智',
+          url: 'https://gitlab.xiaomawang.com/test/project/-/commit/test-commit-1-12345678',
+        },
+        reviewResult: {
+          overallScore: 8.5,
+          summary: '代码质量良好，实现了完整的用户认证功能',
+          issues: [
+            {
+              severity: 'medium',
+              type: 'security',
+              file: 'src/auth/login.ts',
+              line: 45,
+              message: '密码验证逻辑可能存在时序攻击风险',
+              suggestion: '建议使用恒定时间比较函数',
+            }
+          ],
+          positives: ['代码结构清晰', '包含完整的测试'],
+          recommendations: ['建议添加更多的边界条件测试', '考虑使用更安全的密码存储方式'],
+        },
+      },
+      {
+        commitInfo: {
+          id: 'test-commit-2-87654321',
+          shortId: 'test5678',
+          message: '🐛 修复用户登录时的内存泄漏问题',
+          author: '小小智',
+          url: 'https://gitlab.xiaomawang.com/test/project/-/commit/test-commit-2-87654321',
+        },
+        reviewResult: {
+          overallScore: 9.2,
+          summary: '优秀的bug修复，解决了重要的内存泄漏问题',
+          issues: [],
+          positives: ['修复了关键性能问题', '代码清理得很好', '添加了防护代码'],
+          recommendations: ['建议添加性能监控', '可以考虑添加相关的单元测试'],
+        },
+      }
+    ];
+
+    const result = await dingtalkBatchTool.execute({
+      context: {
+        webhookUrl: process.env.DINGTALK_WEBHOOK_URL,
+        secret: process.env.DINGTALK_SECRET,
+        projectName: '测试项目',
+        pushInfo: {
+          branch: 'main',
+          totalCommits: 2,
+          author: '小小智',
+        },
+        commitsReviews: testCommitsReviews,
+      },
+      runtimeContext: {} as any
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    console.error('DingTalk batch test error:', error);
+    res.status(500).json({
+      success: false,
+      message: `发送批量测试消息失败: ${error.message}`,
+    });
+  }
 });
 
 // 测试钉钉消息端点

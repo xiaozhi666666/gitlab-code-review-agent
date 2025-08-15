@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { gitlabWebhookTool, gitlabApiTool } from './mastra/tools/gitlab-webhook-tool';
 import { codeReviewTool } from './mastra/tools/code-review-tool';
-import { dingtalkTool } from './mastra/tools/dingtalk-tool';
+import { dingtalkTool, dingtalkBatchTool } from './mastra/tools/dingtalk-tool';
 
 const app = express();
 app.use(express.json());
@@ -42,10 +42,11 @@ app.post('/webhook/gitlab', async (req, res) => {
       });
     }
 
-    console.log(`📊 处理 ${webhookResult.commits.length} 个提交`);
-    let totalReviews = 0;
-
-    // 2. 处理每个提交
+    console.log(`📊 批量处理 ${webhookResult.commits.length} 个提交`);
+    
+    // 2. 批量处理所有提交的代码审查
+    const commitsReviews = [];
+    
     for (const commit of webhookResult.commits) {
       try {
         console.log(`🔍 分析提交: ${commit.shortId}`);
@@ -99,48 +100,80 @@ app.post('/webhook/gitlab', async (req, res) => {
         console.log(`🔍 发现问题: ${reviewResult.issues.length} 个`);
         console.log(`👍 积极方面: ${reviewResult.positives.length} 个`);
 
-        // 2.3 发送钉钉通知
-        console.log(`📤 发送钉钉通知...`);
-        if (!process.env.DINGTALK_WEBHOOK_URL) {
-          throw new Error('DINGTALK_WEBHOOK_URL 未配置');
-        }
-
-        const notifyResult = await dingtalkTool.execute({
-          context: {
-            webhookUrl: process.env.DINGTALK_WEBHOOK_URL!,
-            secret: process.env.DINGTALK_SECRET,
-            projectName: webhookResult.projectName,
-            commitInfo: {
-              id: commit.id,
-              shortId: commit.shortId,
-              message: commit.message,
-              author: commit.author,
-              url: commit.url,
-              branch: req.body.ref?.replace('refs/heads/', '') || 'unknown', // 提取分支名
-            },
-            reviewResult,
+        // 收集审查结果
+        commitsReviews.push({
+          commitInfo: {
+            id: commit.id,
+            shortId: commit.shortId,
+            message: commit.message,
+            author: commit.author,
+            url: commit.url,
           },
-          runtimeContext: {} as any
+          reviewResult,
         });
 
-        if (notifyResult.success) {
-          totalReviews++;
-          console.log(`✅ 提交 ${commit.shortId} 处理完成`);
-          console.log(`📱 钉钉通知发送成功`);
-        } else {
-          console.log(`❌ 提交 ${commit.shortId} 钉钉通知失败: ${notifyResult.message}`);
-        }
+        console.log(`✅ 提交 ${commit.shortId} 分析完成`);
 
       } catch (error: any) {
         console.error(`❌ 处理提交 ${commit.shortId} 失败:`, error.message);
       }
     }
 
-    res.json({
-      success: true,
-      message: `成功处理 ${totalReviews}/${webhookResult.commits.length} 个提交`,
-      reviewCount: totalReviews,
-    });
+    // 3. 发送批量钉钉通知
+    if (commitsReviews.length > 0) {
+      console.log(`📤 发送批量钉钉通知 (${commitsReviews.length} 个提交)...`);
+      
+      if (!process.env.DINGTALK_WEBHOOK_URL) {
+        throw new Error('DINGTALK_WEBHOOK_URL 未配置');
+      }
+
+      // 获取主要提交者（提交数量最多的作者）
+      const authorCounts = commitsReviews.reduce((acc, review) => {
+        acc[review.commitInfo.author] = (acc[review.commitInfo.author] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const mainAuthor = Object.entries(authorCounts).reduce((a, b) => 
+        authorCounts[a[0]] > authorCounts[b[0]] ? a : b
+      )[0];
+
+      const batchNotifyResult = await dingtalkBatchTool.execute({
+        context: {
+          webhookUrl: process.env.DINGTALK_WEBHOOK_URL!,
+          secret: process.env.DINGTALK_SECRET,
+          projectName: webhookResult.projectName,
+          pushInfo: {
+            branch: req.body.ref?.replace('refs/heads/', '') || 'unknown',
+            totalCommits: commitsReviews.length,
+            author: mainAuthor,
+          },
+          commitsReviews,
+        },
+        runtimeContext: {} as any
+      });
+
+      if (batchNotifyResult.success) {
+        console.log(`✅ 批量钉钉通知发送成功`);
+        res.json({
+          success: true,
+          message: `成功处理并发送批量通知 (${commitsReviews.length} 个提交)`,
+          reviewCount: commitsReviews.length,
+        });
+      } else {
+        console.log(`❌ 批量钉钉通知失败: ${batchNotifyResult.message}`);
+        res.json({
+          success: false,
+          message: `批量通知失败: ${batchNotifyResult.message}`,
+          reviewCount: commitsReviews.length,
+        });
+      }
+    } else {
+      res.json({
+        success: false,
+        message: '没有成功处理的提交',
+        reviewCount: 0,
+      });
+    }
 
   } catch (error: any) {
     console.error('❌ Webhook 处理失败:', error.message);
