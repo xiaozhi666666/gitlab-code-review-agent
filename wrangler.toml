@@ -1,0 +1,24 @@
+# Cloudflare Workers 配置文件
+# 用于通过 wrangler 部署
+
+name = "gitlab-code-review-mastra"
+main = ".mastra/output/index.mjs"
+compatibility_date = "2024-01-01"
+
+# Node.js 兼容性
+node_compat = true
+
+[build]
+command = "npm install --legacy-peer-deps && npm run build"
+
+# 环境变量（敏感信息通过 Dashboard 或 wrangler secret 设置）
+[vars]
+NODE_ENV = "production"
+
+# 生产环境配置（可选）
+[env.production]
+workers_dev = false
+
+# 开发环境配置（可选）
+[env.development]
+workers_dev = true
