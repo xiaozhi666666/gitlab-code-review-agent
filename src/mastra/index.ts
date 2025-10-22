@@ -6,10 +6,10 @@ import { codeReviewWorkflow } from './workflows/code-review-workflow';
 import { codeReviewAgent } from './agents/code-review-agent';
 
 export const mastra = new Mastra({
-  workflows: { 
+  workflows: {
     codeReviewWorkflow
   },
-  agents: { 
+  agents: {
     codeReviewAgent
   },
   storage: new LibSQLStore({

@@ -13,6 +13,8 @@
     "server:simple:dev": "tsx watch src/simple-server.ts",
     "server:test": "tsx src/test-mode-server.ts",
     "server:test:dev": "tsx watch src/test-mode-server.ts",
+    "server:remote": "tsx src/remote-mastra-server.ts",
+    "server:remote:dev": "tsx watch src/remote-mastra-server.ts",
     "test:webhook": "node test-webhook.js"
   },
   "keywords": [],
