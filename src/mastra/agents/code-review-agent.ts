@@ -1,7 +1,5 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { Memory } from '@mastra/memory';
-import { LibSQLStore } from '@mastra/libsql';
 import { gitlabWebhookTool, gitlabApiTool } from '../tools/gitlab-webhook-tool';
 import { codeReviewTool } from '../tools/code-review-tool';
 import { dingtalkTool, dingtalkSimpleTool } from '../tools/dingtalk-tool';
@@ -62,15 +60,10 @@ export const codeReviewAgent = new Agent({
   `,
   model: openai('gpt-4o'),
   tools: { 
-    gitlabWebhookTool, 
+    gitlabWebhookTool,
     gitlabApiTool,
     codeReviewTool,
     dingtalkTool,
     dingtalkSimpleTool
   },
-  memory: new Memory({
-    storage: new LibSQLStore({
-      url: 'file:../mastra-code-review.db',
-    }),
-  }),
 });
