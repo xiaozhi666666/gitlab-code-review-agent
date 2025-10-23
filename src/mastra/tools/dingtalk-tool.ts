@@ -1,7 +1,7 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import axios from 'axios';
-import crypto from 'crypto-js';
+import crypto from 'crypto';
 
 interface CodeReviewResult {
   overallScore: number;
@@ -63,7 +63,9 @@ export const dingtalkTool = createTool({
       if (secret) {
         timestamp = Date.now().toString();
         const stringToSign = `${timestamp}\n${secret}`;
-        sign = crypto.enc.Base64.stringify(crypto.HmacSHA256(stringToSign, secret));
+        const hmac = crypto.createHmac('sha256', secret);
+        hmac.update(stringToSign);
+        sign = hmac.digest('base64');
       }
       
       // Format severity emoji
@@ -216,7 +218,9 @@ export const dingtalkBatchTool = createTool({
       if (secret) {
         timestamp = Date.now().toString();
         const stringToSign = `${timestamp}\n${secret}`;
-        sign = crypto.enc.Base64.stringify(crypto.HmacSHA256(stringToSign, secret));
+        const hmac = crypto.createHmac('sha256', secret);
+        hmac.update(stringToSign);
+        sign = hmac.digest('base64');
       }
       
       // Calculate overall statistics
@@ -359,7 +363,9 @@ export const dingtalkSimpleTool = createTool({
       if (secret) {
         timestamp = Date.now().toString();
         const stringToSign = `${timestamp}\n${secret}`;
-        sign = crypto.enc.Base64.stringify(crypto.HmacSHA256(stringToSign, secret));
+        const hmac = crypto.createHmac('sha256', secret);
+        hmac.update(stringToSign);
+        sign = hmac.digest('base64');
       }
       
       // Prepare request payload
