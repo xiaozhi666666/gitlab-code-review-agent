@@ -9,42 +9,11 @@ services:
     image: gitlab-code-review-mastra:latest
     ports:
       - "4111:4111"
-    environment:
-      # OpenAI API Key (必需)
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # 运行环境
-      - NODE_ENV=production
-      # 可选：日志级别
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    # 环境变量文件（可选）
     env_file:
       - .env
     restart: unless-stopped
-    # 健康检查
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4111/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    # 资源限制（可选，根据实际需求调整）
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    # 网络
     networks:
       - mastra-network
-    # 日志配置
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 networks:
   mastra-network:

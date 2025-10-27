@@ -6,13 +6,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "mastra dev",
     "build": "mastra build",
-    "start": "mastra start",
-    "logs:remote": "scripty",
-    "restart:remote": "scripty",
-    "status:remote": "scripty"
-  },
-  "scripty": {
-    "path": "./scripts"
+    "start": "mastra start"
   },
   "keywords": [],
   "author": "",
@@ -36,7 +30,6 @@
   "devDependencies": {
     "@types/node": "^24.2.1",
     "mastra": "^0.17.3",
-    "scripty": "^3.0.0",
     "typescript": "^5.9.2"
   }
 }
