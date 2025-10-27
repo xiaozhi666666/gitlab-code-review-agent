@@ -35,3 +35,13 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+
+# Backup files
+*.backup
+.env.backup*
+
+# Test files
+*.test.ts
+*.spec.ts
