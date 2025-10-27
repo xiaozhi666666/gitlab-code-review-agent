@@ -10,22 +10,27 @@ COPY package.json yarn.lock ./
 # 安装 yarn（如果未包含）
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
-# 安装依赖
-# 使用 --frozen-lockfile 确保依赖版本一致
+# 安装所有依赖（包括 devDependencies，mastra 需要）
 RUN yarn install --frozen-lockfile --network-timeout 100000
 
-# 复制源代码
+# 复制源代码和配置文件
 COPY . .
 
 # 构建项目
 RUN yarn build
 
+# 安装生产依赖到 .mastra/output（确保运行时依赖完整）
+RUN cd .mastra/output && \
+    if [ -f package.json ]; then \
+      yarn install --production --frozen-lockfile --network-timeout 100000 || \
+      npm install --production --legacy-peer-deps; \
+    fi
+
 # 暴露 Mastra API 端口
 EXPOSE 4111
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:4111/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+# 切换到构建输出目录
+WORKDIR /app/.mastra/output
 
-# 启动命令
-CMD ["yarn", "start"]
+# 启动命令（使用 mastra 生成的启动脚本）
+CMD ["node", "--import=./instrumentation.mjs", "--import=@opentelemetry/instrumentation/hook.mjs", "./index.mjs"]
